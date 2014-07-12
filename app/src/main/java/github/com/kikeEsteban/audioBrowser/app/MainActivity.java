@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ListView;
 import android.widget.TextView;
+
 import java.math.BigDecimal;
 
 
@@ -36,6 +37,7 @@ public class MainActivity extends ListActivity {
             setListAdapter(mediaAdapter);
         }
     }
+
 
     @Override
     protected void onListItemClick(ListView list, View view, int position, long id) {
