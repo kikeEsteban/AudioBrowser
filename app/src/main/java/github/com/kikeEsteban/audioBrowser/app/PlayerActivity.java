@@ -1,6 +1,7 @@
 package github.com.kikeEsteban.audioBrowser.app;
 
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -16,7 +17,9 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.NumberPicker;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -31,7 +34,7 @@ import github.com.kikeEsteban.audioBrowser.app.soundfile.CheapSoundFile;
 
 
 public class PlayerActivity extends ActionBarActivity
-implements WaveformView.WaveformListener{
+implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
     /**
      * Preference names
@@ -94,7 +97,7 @@ implements WaveformView.WaveformListener{
     private static final float VISUALIZER_HEIGHT_DIP = 50f;
 
     private TextView selectedFile = null;
-    private SeekBar seekbar = null;
+  //  private SeekBar seekbar = null;
     private MediaPlayer player = null;
     private ImageButton playButton = null;
     private ImageButton prevButton = null;
@@ -112,21 +115,32 @@ implements WaveformView.WaveformListener{
         }
     };
 
+    private Button startLoopTimeButton = null;
+    private Button endLoopTimeButton = null;
+
     // Visualization
     // Vista de visualización
     //private LinearLayout mLinearLayout;
     // private VisualizerView mVisualizerView;
     // private Visualizer mVisualizer;
 
+
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_player);
-        seekbar = (SeekBar)findViewById(R.id.seekbar);
+
+        // TODO: Add custom view zoom seek bar
+        //seekbar = (SeekBar)findViewById(R.id.seekbar);
         playButton = (ImageButton)findViewById(R.id.play);
         prevButton = (ImageButton)findViewById(R.id.prev);
         nextButton = (ImageButton)findViewById(R.id.next);
         selectedFile = (TextView) findViewById(R.id.selectedfile);
+        startLoopTimeButton = (Button)findViewById(R.id.loop_start_time);
+        endLoopTimeButton = (Button)findViewById(R.id.loop_end_time);
+
 
         playButton.setOnClickListener(onButtonClick);
         nextButton.setOnClickListener(onButtonClick);
@@ -144,14 +158,19 @@ implements WaveformView.WaveformListener{
         currentFile = b.getString("songFile");
        // startPlay(currentFile);
 
-        seekbar.setOnSeekBarChangeListener(seekBarChanged);
+        // TODO: Add custom view zoom seek bar
+        //seekbar.setOnSeekBarChangeListener(seekBarChanged);
 
         mIsPlaying = false;
         mFilename = currentFile;
         mSoundFile = null;
         mKeyDown = false;
 
+
+        WaveSurfaceView waveSurfaceView = (WaveSurfaceView)findViewById(R.id.waveform2);
+
         mWaveformView = (WaveformView)findViewById(R.id.waveform);
+        mWaveformView.setWaveRenderer(waveSurfaceView.getRenderer());
         mWaveformView.setListener(this);
 
         DisplayMetrics metrics = new DisplayMetrics();
@@ -169,6 +188,22 @@ implements WaveformView.WaveformListener{
         if (!mFilename.equals("record")) {
             loadFromFile();
         }
+
+        startLoopTimeButton.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+                show();
+            }
+        });
+        endLoopTimeButton.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+                show();
+            }
+        });
+
 
     }
 
@@ -206,7 +241,11 @@ implements WaveformView.WaveformListener{
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
         int id = item.getItemId();
-        if (id == R.id.action_settings) {
+        if (id == R.id.action_save) {
+            return true;
+        } else if (id == R.id.action_export) {
+            return true;
+        } else if (id == R.id.action_share) {
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -326,7 +365,8 @@ implements WaveformView.WaveformListener{
         Log.i("Selected: ", file);
 
         selectedFile.setText(file);
-        seekbar.setProgress(0);
+        // TODO: Add custom view zoom seek bar
+        //seekbar.setProgress(0);
 
         player.stop();
         player.reset();
@@ -343,7 +383,8 @@ implements WaveformView.WaveformListener{
             e.printStackTrace();
         }
 
-        seekbar.setMax(player.getDuration());
+        // TODO: Add custom view zoom seek bar
+        //seekbar.setMax(player.getDuration());
         playButton.setImageResource(android.R.drawable.ic_media_pause);
 
         updatePosition();
@@ -356,7 +397,8 @@ implements WaveformView.WaveformListener{
         player.reset();
         playButton.setImageResource(android.R.drawable.ic_media_play);
         handler.removeCallbacks(updatePositionRunnable);
-        seekbar.setProgress(0);
+        // TODO: Add custom view zoom seek bar
+        // seekbar.setProgress(0);
 
         isStarted = false;
     }
@@ -364,7 +406,8 @@ implements WaveformView.WaveformListener{
     private void updatePosition(){
         handler.removeCallbacks(updatePositionRunnable);
 
-        seekbar.setProgress(player.getCurrentPosition());
+        // TODO: Add custom view zoom seek bar
+        //seekbar.setProgress(player.getCurrentPosition());
 
         handler.postDelayed(updatePositionRunnable, UPDATE_FREQUENCY);
     }
@@ -905,6 +948,7 @@ implements WaveformView.WaveformListener{
      */
     public void waveformDraw() {
         mWidth = mWaveformView.getMeasuredWidth();
+        System.out.println(mWidth);
         if (mOffsetGoal != mOffset && !mKeyDown)
             updateDisplay();
         else if (mIsPlaying) {
@@ -913,6 +957,58 @@ implements WaveformView.WaveformListener{
             updateDisplay();
         }
     }
+
+
+    @Override
+    public void onValueChange(NumberPicker picker, int oldVal, int newVal) {
+
+        Log.i("value is",""+newVal);
+
+    }
+
+    public void show()
+    {
+
+        final Dialog d = new Dialog(PlayerActivity.this);
+        d.setTitle("NumberPicker");
+        d.setContentView(R.layout.time_picker_dialog);
+        Button b1 = (Button) d.findViewById(R.id.button1);
+        Button b2 = (Button) d.findViewById(R.id.button2);
+        final NumberPicker np1 = (NumberPicker) d.findViewById(R.id.numberPicker1);
+        final NumberPicker np2 = (NumberPicker) d.findViewById(R.id.numberPicker1);
+        final NumberPicker np3 = (NumberPicker) d.findViewById(R.id.numberPicker1);
+        np1.setMaxValue(500); // max value 100
+        np1.setMinValue(0);   // min value 0
+        np1.setWrapSelectorWheel(true);
+        np1.setOnValueChangedListener(this);
+        np2.setMaxValue(60); // max value 100
+        np2.setMinValue(0);   // min value 0
+        np2.setWrapSelectorWheel(true);
+        np2.setOnValueChangedListener(this);
+        np3.setMaxValue(60); // max value 100
+        np3.setMinValue(0);   // min value 0
+        np3.setWrapSelectorWheel(true);
+        np3.setOnValueChangedListener(this);
+
+        b1.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+             //   tv.setText(String.valueOf(np.getValue())); //set the value to textview
+                d.dismiss();
+            }
+        });
+        b2.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+                d.dismiss(); // dismiss the dialog
+            }
+        });
+        d.show();
+    }
+
+
 
     /*
     private void enableDisableButtons() {

@@ -18,15 +18,14 @@ package github.com.kikeEsteban.audioBrowser.app;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
+import android.opengl.GLSurfaceView;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
-import android.view.View;
 
 import github.com.kikeEsteban.audioBrowser.app.soundfile.CheapSoundFile;
 
@@ -43,7 +42,7 @@ import github.com.kikeEsteban.audioBrowser.app.soundfile.CheapSoundFile;
  * WaveformView doesn't actually handle selection, but it will just display
  * the selected part of the waveform in a different color.
  */
-public class WaveformView extends View {
+public class WaveSurfaceView extends GLSurfaceView {
     public interface WaveformListener {
         public void waveformTouchStart(float x);
         public void waveformTouchMove(float x);
@@ -82,32 +81,42 @@ public class WaveformView extends View {
     private GestureDetector mGestureDetector;
     private ScaleGestureDetector mScaleGestureDetector;
     private boolean mInitialized;
-    private GLRenderer mWaveRenderer;
+    private final GLRenderer mRenderer;
 
-
-
-    public WaveformView(Context context, AttributeSet attrs) {
+    public WaveSurfaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
+
+
+        // Create an OpenGL ES 2.0 context.
+        setEGLContextClientVersion(2);
+
+        // Set the Renderer for drawing on the GLSurfaceView
+        mRenderer = new GLRenderer(context);
+        setRenderer(mRenderer);
+
+        // Render the view only when there is a change in the drawing data
+        setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
 
         // We don't want keys, the markers get these
         setFocusable(false);
 
         mGridPaint = new Paint();
         mGridPaint.setAntiAlias(false);
-        mGridPaint.setColor(
-                Color.argb(255,100,100,100));
+//        mGridPaint.setColor(
+//            getResources().getColor(R.drawable.grid_line));
         mSelectedLinePaint = new Paint();
         mSelectedLinePaint.setAntiAlias(false);
-        mSelectedLinePaint.setColor(
-                Color.argb(255,255,0,0));
+//        mSelectedLinePaint.setColor(
+//            getResources().getColor(R.drawable.waveform_selected));
         mUnselectedLinePaint = new Paint();
         mUnselectedLinePaint.setAntiAlias(false);
-                mUnselectedLinePaint.setColor(
-                Color.argb(255,255,255,0));
+//        mUnselectedLinePaint.setColor(
+//            getResources().getColor(R.drawable.waveform_unselected));
         mUnselectedBkgndLinePaint = new Paint();
         mUnselectedBkgndLinePaint.setAntiAlias(false);
-        mUnselectedBkgndLinePaint.setColor(
-                     Color.argb(100,0,255,0) );
+//        mUnselectedBkgndLinePaint.setColor(
+//            getResources().getColor(
+//                R.drawable.waveform_unselected_bkgnd_overlay));
         mBorderLinePaint = new Paint();
         mBorderLinePaint.setAntiAlias(true);
         mBorderLinePaint.setStrokeWidth(1.5f);
@@ -117,17 +126,17 @@ public class WaveformView extends View {
 //            getResources().getColor(R.drawable.selection_border));
         mPlaybackLinePaint = new Paint();
         mPlaybackLinePaint.setAntiAlias(false);
-        mPlaybackLinePaint.setColor(
-            Color.argb(255,255,100,0));
+//        mPlaybackLinePaint.setColor(
+//            getResources().getColor(R.drawable.playback_indicator));
         mTimecodePaint = new Paint();
         mTimecodePaint.setTextSize(12);
         mTimecodePaint.setAntiAlias(true);
 
-        mTimecodePaint.setColor(
-                Color.argb(255,255,255,255));
-        mTimecodePaint.setShadowLayer(
-            2, 1, 1,
-            Color.argb(100,100,100,100));
+//        mTimecodePaint.setColor(
+//            getResources().getColor(R.drawable.timecode));
+//        mTimecodePaint.setShadowLayer(
+//            2, 1, 1,
+//            getResources().getColor(R.drawable.timecode_shadow));
 
 	mGestureDetector = new GestureDetector(
 	        context,
@@ -177,12 +186,27 @@ public class WaveformView extends View {
         mInitialized = false;
     }
 
-    public void setWaveRenderer(GLRenderer waveRenderer){
-        this.mWaveRenderer = waveRenderer;
+    public GLRenderer getRenderer(){
+        return mRenderer;
+    }
+
+    @Override
+    public void onPause() {
+        // TODO Auto-generated method stub
+        super.onPause();
+        mRenderer.onPause();
+    }
+
+    @Override
+    public void onResume() {
+        // TODO Auto-generated method stub
+        super.onResume();
+        mRenderer.onResume();
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+    mRenderer.processTouchEvent(event);
 	mScaleGestureDetector.onTouchEvent(event);
 	if (mGestureDetector.onTouchEvent(event)) {
 	    return true;
@@ -339,6 +363,9 @@ public class WaveformView extends View {
         canvas.drawLine(x, y0, x, y1, paint);
     }
 
+
+
+/*
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -376,14 +403,6 @@ public class WaveformView extends View {
             }
         }
 
-
-        float[] newHeights = new float[width];
-        for (i = 0; i < width; i++) {
-            newHeights[i] = mHeightsAtThisZoomLevel[start + i];
-        }
-
-       mWaveRenderer.setData(newHeights,start);
-
         // Draw waveform
         for (i = 0; i < width; i++) {
             Paint paint;
@@ -391,8 +410,8 @@ public class WaveformView extends View {
                 i + start < mSelectionEnd) {
                 paint = mSelectedLinePaint;
             } else {
-                drawWaveformLine(canvas, i, 0, measuredHeight,
-                                 mUnselectedBkgndLinePaint);
+         //       drawWaveformLine(canvas, i, 0, measuredHeight,
+         //                        mUnselectedBkgndLinePaint);
                 paint = mUnselectedLinePaint;
             }
             drawWaveformLine(
@@ -405,8 +424,6 @@ public class WaveformView extends View {
                 canvas.drawLine(i, 0, i, measuredHeight, mPlaybackLinePaint);
             }
         }
-
-
 
         // If we can see the right edge of the waveform, draw the
         // non-waveform area to the right as unselected
@@ -467,7 +484,7 @@ public class WaveformView extends View {
             mListener.waveformDraw();
         }
     }
-
+*/
     /**
      * Called once when a new sound file is added
      */
