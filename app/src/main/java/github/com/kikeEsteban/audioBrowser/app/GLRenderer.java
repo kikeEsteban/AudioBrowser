@@ -167,6 +167,8 @@ public class GLRenderer implements Renderer {
         mScreenWidth = width;
         mScreenHeight = height;
 
+        vertices=null;
+
         // Redo the Viewport, making it fullscreen.
         GLES20.glViewport(0, 0, (int)mScreenWidth, (int)mScreenHeight);
 

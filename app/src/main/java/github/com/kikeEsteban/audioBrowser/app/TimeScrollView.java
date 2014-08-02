@@ -25,6 +25,15 @@ public class TimeScrollView extends View {
     private float mTextHeight;
 
     Paint backgroundPaint;
+    Paint screenPaint;
+    Paint noLoopPaint;
+    Paint loopPaint;
+    Paint startLoopPaint;
+    Paint endLoopPaint;
+    Paint playbackPaint;
+
+    private float mScreenOffset;
+    private float mScreenWidth;
 
     public TimeScrollView(Context context) {
         super(context);
@@ -72,10 +81,48 @@ public class TimeScrollView extends View {
         mTextPaint.setTextAlign(Paint.Align.LEFT);
 
         backgroundPaint = new Paint();
-        backgroundPaint.setARGB(255,255,0,0);
+        backgroundPaint.setARGB(255,0,255,255);
+
+        noLoopPaint = new Paint();
+        noLoopPaint.setARGB(255,0,255,255);
+
+        loopPaint = new Paint();
+        loopPaint.setARGB(255,0,255,255);
+
+        startLoopPaint = new Paint();
+        startLoopPaint.setARGB(255,0,255,255);
+
+        endLoopPaint = new Paint();
+        endLoopPaint.setARGB(255,0,255,255);
+
+        screenPaint = new Paint();
+        screenPaint.setARGB(255,255,0,0);
+        screenPaint.setStyle(Paint.Style.STROKE);
+
 
         // Update TextPaint and text measurements from attributes
         invalidateTextPaintAndMeasurements();
+    }
+
+    // Offset and width within [0 .. 1] range
+    public synchronized void setData(float offset, float width){
+        if(offset < 0)
+            offset = 0;
+        if(width < 0)
+            width = 0;
+        if (offset > 1)
+            offset = 1;
+        if (width > 1)
+            width = 1;
+        mScreenOffset = offset;
+        mScreenWidth = width;
+    }
+
+    public synchronized float[] getData(){
+        float[] data = new float[2];
+        data[0] = mScreenOffset;
+        data[1] = mScreenWidth;
+        return data;
     }
 
     private void invalidateTextPaintAndMeasurements() {
@@ -106,7 +153,12 @@ public class TimeScrollView extends View {
 
         // Draw the text.
 
-        canvas.drawRect(0,0,canvas.getWidth(),canvas.getHeight(),backgroundPaint);
+        float[] data = getData();
+        float offset = data[0]*canvas.getWidth();
+        float width = data[1]*canvas.getWidth();
+        canvas.drawRect(0,5*canvas.getHeight()/8,canvas.getWidth(),3*canvas.getHeight()/8,backgroundPaint);
+        canvas.drawRect(offset,5,offset+width,canvas.getHeight()-5,screenPaint);
+
         /*canvas.drawText(mExampleString,
                 paddingLeft + (contentWidth - mTextWidth) / 2,
                 paddingTop + (contentHeight + mTextHeight) / 2,

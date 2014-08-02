@@ -153,10 +153,12 @@ public class WaveformView extends View {
                         if (scale - mInitialScaleSpan > 40) {
                             mListener.waveformZoomIn();
                             mInitialScaleSpan = scale;
+                            justZoom = true;
                         }
                         if (scale - mInitialScaleSpan < -40) {
                             mListener.waveformZoomOut();
                             mInitialScaleSpan = scale;
+                            justZoom = true;
                         }
 			return true;
 		    }
@@ -181,6 +183,8 @@ public class WaveformView extends View {
         this.mWaveRenderer = waveRenderer;
     }
 
+    private boolean justZoom = false;
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
 	mScaleGestureDetector.onTouchEvent(event);
@@ -190,10 +194,12 @@ public class WaveformView extends View {
 
         switch(event.getAction()) {
         case MotionEvent.ACTION_DOWN:
+            justZoom = false;
             mListener.waveformTouchStart(event.getX());
             break;
         case MotionEvent.ACTION_MOVE:
-            mListener.waveformTouchMove(event.getX());
+            if(!justZoom)
+                mListener.waveformTouchMove(event.getX());
             break;
         case MotionEvent.ACTION_UP:
             mListener.waveformTouchEnd();
@@ -339,6 +345,14 @@ public class WaveformView extends View {
         canvas.drawLine(x, y0, x, y1, paint);
     }
 
+
+    public int getNumOfHeightAtThisZoomLevel(){
+        if(mHeightsAtThisZoomLevel != null)
+            return  mHeightsAtThisZoomLevel.length;
+        else
+            return 0;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -382,8 +396,8 @@ public class WaveformView extends View {
             newHeights[i] = mHeightsAtThisZoomLevel[start + i];
         }
 
-       mWaveRenderer.setData(newHeights,start);
-
+        mWaveRenderer.setData(newHeights,start);
+/*
         // Draw waveform
         for (i = 0; i < width; i++) {
             Paint paint;
@@ -406,6 +420,20 @@ public class WaveformView extends View {
             }
         }
 
+*/
+        /*
+        for (i = 0; i < width; i++) {
+            if (i + start >= mSelectionStart &&
+                    i + start < mSelectionEnd) {
+                if (i + start == mPlaybackPos) {
+                    canvas.drawLine(i, 0, i, measuredHeight, mPlaybackLinePaint);
+                }
+            }
+        }
+        */
+        if(mPlaybackPos-start>=0){
+            canvas.drawLine(mPlaybackPos-start, 0, mPlaybackPos-start, measuredHeight, mPlaybackLinePaint);
+        }
 
 
         // If we can see the right edge of the waveform, draw the
@@ -466,6 +494,10 @@ public class WaveformView extends View {
         if (mListener != null) {
             mListener.waveformDraw();
         }
+    }
+
+    public int getNumOfFrames(){
+        return mSoundFile.getNumFrames();
     }
 
     /**

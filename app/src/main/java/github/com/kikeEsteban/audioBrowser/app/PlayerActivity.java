@@ -90,6 +90,9 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     private int mEndPos;
 
 
+    private TimeScrollView mTimeScrollView;
+
+
     // Player
 
     private static final int UPDATE_FREQUENCY = 500;
@@ -140,7 +143,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         selectedFile = (TextView) findViewById(R.id.selectedfile);
         startLoopTimeButton = (Button)findViewById(R.id.loop_start_time);
         endLoopTimeButton = (Button)findViewById(R.id.loop_end_time);
-
+        mTimeScrollView = (TimeScrollView)findViewById(R.id.timeScroll);
 
         playButton.setOnClickListener(onButtonClick);
         nextButton.setOnClickListener(onButtonClick);
@@ -632,7 +635,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
         mTouchDragging = false;
 
-        mOffset = 0;
+        setmOffset(0);
         mOffsetGoal = 0;
         mFlingVelocity = 0;
         resetPositions();
@@ -660,14 +663,16 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     public void waveformTouchStart(float x) {
         mTouchDragging = true;
         mTouchStart = x;
-        mTouchInitialOffset = mOffset;
+        mTouchInitialOffset = getmOffset();
         mFlingVelocity = 0;
         mWaveformTouchStartMsec = System.currentTimeMillis();
     }
 
     public void waveformTouchMove(float x) {
-        mOffset = trap((int)(mTouchInitialOffset + (mTouchStart - x)));
-        updateDisplay();
+
+         setmOffset(trap((int)(mTouchInitialOffset + (mTouchStart - x))));
+         updateDisplay();
+
     }
 
     private int trap(int pos) {
@@ -696,27 +701,28 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 float saveVel = mFlingVelocity;
 
                 offsetDelta = mFlingVelocity / 30;
-                if (mFlingVelocity > 80) {
-                    mFlingVelocity -= 80;
-                } else if (mFlingVelocity < -80) {
-                    mFlingVelocity += 80;
+                float threshold = 80;
+                if (mFlingVelocity > threshold) {
+                    mFlingVelocity -= threshold;
+                } else if (mFlingVelocity < -threshold) {
+                    mFlingVelocity += threshold;
                 } else {
                     mFlingVelocity = 0;
                 }
 
-                mOffset += offsetDelta;
+                setmOffset(getmOffset() + offsetDelta);
 
-                if (mOffset + mWidth / 2 > mMaxPos) {
-                    mOffset = mMaxPos - mWidth / 2;
+                if (getmOffset() + mWidth / 2 > mMaxPos) {
+                    setmOffset(mMaxPos - mWidth / 2);
                     mFlingVelocity = 0;
                 }
-                if (mOffset < 0) {
-                    mOffset = 0;
+                if (getmOffset() < 0) {
+                    setmOffset(0);
                     mFlingVelocity = 0;
                 }
-                mOffsetGoal = mOffset;
+                mOffsetGoal = getmOffset();
             } else {
-                offsetDelta = mOffsetGoal - mOffset;
+                offsetDelta = mOffsetGoal - getmOffset();
 
                 if (offsetDelta > 10)
                     offsetDelta = offsetDelta / 10;
@@ -729,13 +735,18 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 else
                     offsetDelta = 0;
 
-                mOffset += offsetDelta;
+                setmOffset(getmOffset() + offsetDelta);
             }
         }
 
-        mWaveformView.setParameters(mStartPos, mEndPos, mOffset);
+        mWaveformView.setParameters(mStartPos, mEndPos, getmOffset());
         mWaveformView.invalidate();
 
+        // Update TimeScroll view data
+        float relativeOffset = (float) getmOffset() /mWaveformView.getNumOfHeightAtThisZoomLevel();
+        float relativeWidth = (float)mWaveformView.getMeasuredWidth()/mWaveformView.getNumOfHeightAtThisZoomLevel();
+        mTimeScrollView.setData(relativeOffset,relativeWidth);
+        mTimeScrollView.invalidate();
 
         /*
         mStartMarker.setContentDescription(
@@ -825,14 +836,13 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
     public void waveformTouchEnd() {
         mTouchDragging = false;
-        mOffsetGoal = mOffset;
-
+        mOffsetGoal = getmOffset();
         long elapsedMsec = System.currentTimeMillis() -
                 mWaveformTouchStartMsec;
         if (elapsedMsec < 300) {
             if (mIsPlaying) {
                 int seekMsec = mWaveformView.pixelsToMillisecs(
-                        (int)(mTouchStart + mOffset));
+                        (int)(mTouchStart + getmOffset()));
                 if (seekMsec >= mPlayStartMsec &&
                         seekMsec < mPlayEndMsec) {
                     player.seekTo(seekMsec - mPlayStartOffset);
@@ -840,7 +850,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                     handlePause();
                 }
             } else {
-                onPlay((int)(mTouchStart + mOffset));
+                onPlay((int)(mTouchStart + getmOffset()));
             }
         }
     }
@@ -915,18 +925,19 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
     public void waveformFling(float vx) {
         mTouchDragging = false;
-        mOffsetGoal = mOffset;
+        mOffsetGoal = getmOffset();
         mFlingVelocity = (int)(-vx);
         updateDisplay();
     }
+
 
     public void waveformZoomIn() {
         mWaveformView.zoomIn();
         mStartPos = mWaveformView.getStart();
         mEndPos = mWaveformView.getEnd();
         mMaxPos = mWaveformView.maxPos();
-        mOffset = mWaveformView.getOffset();
-        mOffsetGoal = mOffset;
+        setmOffset(mWaveformView.getOffset());
+        mOffsetGoal = getmOffset();
         //enableZoomButtons();
         updateDisplay();
     }
@@ -936,8 +947,8 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         mStartPos = mWaveformView.getStart();
         mEndPos = mWaveformView.getEnd();
         mMaxPos = mWaveformView.maxPos();
-        mOffset = mWaveformView.getOffset();
-        mOffsetGoal = mOffset;
+        setmOffset(mWaveformView.getOffset());
+        mOffsetGoal = getmOffset();
         //enableZoomButtons();
         updateDisplay();
     }
@@ -949,7 +960,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     public void waveformDraw() {
         mWidth = mWaveformView.getMeasuredWidth();
         System.out.println(mWidth);
-        if (mOffsetGoal != mOffset && !mKeyDown)
+        if (mOffsetGoal != getmOffset() && !mKeyDown)
             updateDisplay();
         else if (mIsPlaying) {
             updateDisplay();
@@ -1006,6 +1017,14 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             }
         });
         d.show();
+    }
+
+    public int getmOffset() {
+        return mOffset;
+    }
+
+    public void setmOffset(int mOffset) {
+        this.mOffset = mOffset;
     }
 
 
