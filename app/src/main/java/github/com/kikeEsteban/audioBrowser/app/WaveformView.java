@@ -83,6 +83,7 @@ public class WaveformView extends View {
     private ScaleGestureDetector mScaleGestureDetector;
     private boolean mInitialized;
     private GLRenderer mWaveRenderer;
+    private int mCurrentNumOfHeights = 0;
 
 
 
@@ -246,6 +247,7 @@ public class WaveformView extends View {
             mZoomLevel--;
             mSelectionStart *= 2;
             mSelectionEnd *= 2;
+            mCurrentNumOfHeights *= 2;
             mHeightsAtThisZoomLevel = null;
             int offsetCenter = mOffset + getMeasuredWidth() / 2;
             offsetCenter *= 2;
@@ -265,6 +267,7 @@ public class WaveformView extends View {
             mZoomLevel++;
             mSelectionStart /= 2;
             mSelectionEnd /= 2;
+            mCurrentNumOfHeights /= 2;
             int offsetCenter = mOffset + getMeasuredWidth() / 2;
             offsetCenter /= 2;
             mOffset = offsetCenter - getMeasuredWidth() / 2;
@@ -347,10 +350,7 @@ public class WaveformView extends View {
 
 
     public int getNumOfHeightAtThisZoomLevel(){
-        if(mHeightsAtThisZoomLevel != null)
-            return  mHeightsAtThisZoomLevel.length;
-        else
-            return 0;
+        return mCurrentNumOfHeights;
     }
 
     @Override
@@ -644,5 +644,6 @@ public class WaveformView extends View {
             mHeightsAtThisZoomLevel[i] =
                 (int)(mValuesByZoomLevel[mZoomLevel][i] * halfHeight);
         }
+        mCurrentNumOfHeights = mHeightsAtThisZoomLevel.length;
     }
 }

@@ -2,22 +2,17 @@ package github.com.kikeEsteban.audioBrowser.app;
 
 
 import android.content.Context;
-import android.graphics.Rect;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView.Renderer;
 import android.opengl.Matrix;
-import android.view.MotionEvent;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.nio.ShortBuffer;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-// TODO: Draw text
-// TODO: Draw waveform
 
 public class GLRenderer implements Renderer {
 
@@ -30,7 +25,6 @@ public class GLRenderer implements Renderer {
     public static float vertices[];
     public static short indices[];
     public FloatBuffer vertexBuffer;
-    public ShortBuffer drawListBuffer;
 
     // Our screenresolution
     float   mScreenWidth = 1280;
@@ -39,10 +33,13 @@ public class GLRenderer implements Renderer {
     // Misc
     Context mContext;
     long mLastTime;
-    int mProgram;
-
-    public Rect image;
     int mNumofSamples = 10;
+
+    static float[] mVerticesSynched;
+    static short[] mIndicesSynched;
+    static boolean dataChanged = false;
+
+    private static final Object countLock = new Object();
 
     public GLRenderer(Context c)
     {
@@ -67,37 +64,10 @@ public class GLRenderer implements Renderer {
 
         // Get the current time
         long now = System.currentTimeMillis();
-
         // We should make sure we are valid and sane
         if (mLastTime > now) return;
-
         // Get the amount of time the last frame took.
         long elapsed = now - mLastTime;
-        // Update our example
-        // Get the half of screen value
-  /*      int screenhalf = (int) (mScreenWidth / 2);
-
-        mNumofSamples = (int)mScreenWidth;
-      //  synchronized (vertices){
-            vertices = new float[mNumofSamples*3];
-            for(int i = 0; i <vertices.length - 3; i += 3){
-                vertices[i] = i/3;
-                vertices[i+1] = mScreenHeight + screenhalf * (float)(Math.random()-0.5)*2;
-                vertices[i+2] = 0.0f;
-            }
-
-            ByteBuffer bb = ByteBuffer.allocateDirect(vertices.length * 4);
-            bb.order(ByteOrder.nativeOrder());
-            vertexBuffer = bb.asFloatBuffer();
-            vertexBuffer.put(vertices);
-            vertexBuffer.position(0);
-      //  }
-
-        indices = new short[mNumofSamples];// {0, 1, 2, 3, 4, 5}; // loop in the android official tutorial opengles why different order.
-        for(int i = 0 ; i < indices.length; i++){
-            indices[i] = (short)(i+1);
-        }
-*/
 
         // Buffer initialization
         if(vertices==null){
@@ -113,7 +83,7 @@ public class GLRenderer implements Renderer {
                 indices[i] = (short)(i+1);
             }
         }
-
+        // Synched update of vertices
         updateData();
 
         ByteBuffer bb = ByteBuffer.allocateDirect(vertices.length * 4);
@@ -209,34 +179,8 @@ public class GLRenderer implements Renderer {
         GLES20.glUseProgram(riGraphicTools.sp_SolidColor);
     }
 
-    // TODO: Calculate position and Zoom and update vertices
-    public void processTouchEvent(MotionEvent event)
-    {
-        // Get the half of screen value
-        int screenhalf = (int) (mScreenWidth / 2);
-        if(event.getX()<screenhalf)
-        {
-            image.left -= 10;
-            image.right -= 10;
-        }
-        else
-        {
-            image.left += 10;
-            image.right += 10;
-        }
 
-        // Update the new data.
-        //  TranslateSprite();
-    }
-
-
-    // TODO: Update waveform data
-
-    static float[] mVerticesSynched;
-    static short[] mIndicesSynched;
-    static boolean dataChanged = false;
-
-    private static final Object countLock = new Object();
+    // Update waveform data
 
     public synchronized void updateData(){
         if(dataChanged && mVerticesSynched != null){

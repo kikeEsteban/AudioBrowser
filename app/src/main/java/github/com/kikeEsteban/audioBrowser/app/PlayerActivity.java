@@ -21,8 +21,6 @@ import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.NumberPicker;
 import android.widget.SeekBar;
-import android.widget.TextView;
-
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -39,18 +37,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     /**
      * Preference names
      */
-    public static final String PREF_SUCCESS_COUNT = "success_count";
-    public static final String PREF_STATS_SERVER_CHECK =
-            "stats_server_check";
-    public static final String PREF_STATS_SERVER_ALLOWED =
-            "stats_server_allowed";
     public static final String PREF_ERROR_COUNT = "error_count";
-    public static final String PREF_ERR_SERVER_CHECK =
-            "err_server_check";
-    public static final String PREF_ERR_SERVER_ALLOWED =
-            "err_server_allowed";
-    public static final String PREF_UNIQUE_ID = "unique_id";
-
 
     // loading
     private long mLoadingStartTime;
@@ -61,6 +48,12 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
     // Waveform listener
     private CheapSoundFile mSoundFile;
+
+    private String mTitle;
+    private String mArtist;
+    private String mAlbum;
+    private int mYear;
+    private String mGenre;
 
     private boolean mTouchDragging;
     private float mTouchStart;
@@ -75,12 +68,8 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     private boolean mCanSeekAccurately;
     private File mFile;
     private String mFilename;
-    private boolean mKeyDown;
     private float mDensity;
     private String mExtension;
-    private int mLastDisplayedStartPos;
-    private int mLastDisplayedEndPos;
-
 
     private int mOffset;
     private int mOffsetGoal;
@@ -89,17 +78,11 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     private int mStartPos;
     private int mEndPos;
 
-
     private TimeScrollView mTimeScrollView;
 
-
     // Player
-
     private static final int UPDATE_FREQUENCY = 500;
-    private static final int STEP_VALUE = 4000;
-    private static final float VISUALIZER_HEIGHT_DIP = 50f;
 
-    private TextView selectedFile = null;
   //  private SeekBar seekbar = null;
     private MediaPlayer player = null;
     private ImageButton playButton = null;
@@ -110,37 +93,22 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     private String currentFile = "";
     private boolean isMoveingSeekBar = false;
 
-    private final Handler handler = new Handler();
-
-    private final Runnable updatePositionRunnable = new Runnable() {
-        public void run() {
-            updatePosition();
-        }
-    };
-
     private Button startLoopTimeButton = null;
     private Button endLoopTimeButton = null;
 
-    // Visualization
-    // Vista de visualización
-    //private LinearLayout mLinearLayout;
-    // private VisualizerView mVisualizerView;
-    // private Visualizer mVisualizer;
-
-
-
+    private boolean mWaitingForUserGesture = false;
+    private int mWaitingTime = 2000;
+    final Handler mWaitHandler = new Handler();
+    Runnable mEndWaitDelayed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_player);
 
-        // TODO: Add custom view zoom seek bar
-        //seekbar = (SeekBar)findViewById(R.id.seekbar);
         playButton = (ImageButton)findViewById(R.id.play);
         prevButton = (ImageButton)findViewById(R.id.prev);
         nextButton = (ImageButton)findViewById(R.id.next);
-        selectedFile = (TextView) findViewById(R.id.selectedfile);
         startLoopTimeButton = (Button)findViewById(R.id.loop_start_time);
         endLoopTimeButton = (Button)findViewById(R.id.loop_end_time);
         mTimeScrollView = (TimeScrollView)findViewById(R.id.timeScroll);
@@ -159,16 +127,10 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
         Bundle b = getIntent().getExtras();
         currentFile = b.getString("songFile");
-       // startPlay(currentFile);
-
-        // TODO: Add custom view zoom seek bar
-        //seekbar.setOnSeekBarChangeListener(seekBarChanged);
 
         mIsPlaying = false;
         mFilename = currentFile;
         mSoundFile = null;
-        mKeyDown = false;
-
 
         WaveSurfaceView waveSurfaceView = (WaveSurfaceView)findViewById(R.id.waveform2);
 
@@ -185,8 +147,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             mWaveformView.recomputeHeights(mDensity);
             mMaxPos = mWaveformView.maxPos();
         }
-
-        mHandler.postDelayed(mTimerRunnable, 100);
 
         if (!mFilename.equals("record")) {
             loadFromFile();
@@ -207,28 +167,14 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             }
         });
 
+        mEndWaitDelayed = new Runnable() {
+            @Override
+            public void run() {
+                mWaitingForUserGesture = false;
+            }
+        };
 
     }
-
-    private Runnable mTimerRunnable = new Runnable() {
-        public void run() {
-            // Updating an EditText is slow on Android.  Make sure
-            // we only do the update if the text has actually changed.
-            if (mStartPos != mLastDisplayedStartPos ){
-          //          && !mStartText.hasFocus()) {
-          //      mStartText.setText(formatTime(mStartPos));
-                mLastDisplayedStartPos = mStartPos;
-            }
-
-            if (mEndPos != mLastDisplayedEndPos ){
-          //       &&   !mEndText.hasFocus()) {
-          //      mEndText.setText(formatTime(mEndPos));
-                mLastDisplayedEndPos = mEndPos;
-            }
-
-            mHandler.postDelayed(mTimerRunnable, 100);
-        }
-    };
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -257,12 +203,10 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     @Override
     protected void onDestroy() {
         super.onDestroy();
-
-        handler.removeCallbacks(updatePositionRunnable);
+        mWaitHandler.removeCallbacks(mEndWaitDelayed);
         player.stop();
         player.reset();
         player.release();
-
         player = null;
     }
 
@@ -313,7 +257,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 {
                     if(player.isPlaying())
                     {
-                        handler.removeCallbacks(updatePositionRunnable);
                         player.pause();
                         playButton.setImageResource(android.R.drawable.ic_media_play);
                     }
@@ -323,8 +266,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                         {
                             player.start();
                             playButton.setImageResource(android.R.drawable.ic_media_pause);
-                            // jump to visualizer layout and launch audio
-                            updatePosition();
                         }
                         else
                         {
@@ -336,6 +277,8 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 }
                 case R.id.next:
                 {
+                    // Move to loop points
+                    /*
                     int seekto = player.getCurrentPosition() + STEP_VALUE;
 
                     if(seekto > player.getDuration())
@@ -344,11 +287,13 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                     player.pause();
                     player.seekTo(seekto);
                     player.start();
-
+                    */
                     break;
                 }
                 case R.id.prev:
                 {
+                    // Move to loop points or to song begining
+                    /*
                     int seekto = player.getCurrentPosition() - STEP_VALUE;
 
                     if(seekto < 0)
@@ -357,6 +302,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                     player.pause();
                     player.seekTo(seekto);
                     player.start();
+                    */
 
                     break;
                 }
@@ -365,12 +311,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     };
 
     private void startPlay(String file) {
-        Log.i("Selected: ", file);
-
-        selectedFile.setText(file);
-        // TODO: Add custom view zoom seek bar
-        //seekbar.setProgress(0);
-
         player.stop();
         player.reset();
 
@@ -386,12 +326,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             e.printStackTrace();
         }
 
-        // TODO: Add custom view zoom seek bar
-        //seekbar.setMax(player.getDuration());
         playButton.setImageResource(android.R.drawable.ic_media_pause);
-
-        updatePosition();
-
         isStarted = true;
     }
 
@@ -399,20 +334,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         player.stop();
         player.reset();
         playButton.setImageResource(android.R.drawable.ic_media_play);
-        handler.removeCallbacks(updatePositionRunnable);
-        // TODO: Add custom view zoom seek bar
-        // seekbar.setProgress(0);
-
         isStarted = false;
-    }
-
-    private void updatePosition(){
-        handler.removeCallbacks(updatePositionRunnable);
-
-        // TODO: Add custom view zoom seek bar
-        //seekbar.setProgress(player.getCurrentPosition());
-
-        handler.postDelayed(updatePositionRunnable, UPDATE_FREQUENCY);
     }
 
 
@@ -422,7 +344,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         mFile = new File(mFilename);
         mExtension = getExtensionFromFilename(mFilename);
 
-        /*SongMetadataReader metadataReader = new SongMetadataReader(
+        SongMetadataReader metadataReader = new SongMetadataReader(
                 this, mFilename);
         mTitle = metadataReader.mTitle;
         mArtist = metadataReader.mArtist;
@@ -435,7 +357,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             titleLabel += " - " + mArtist;
         }
         setTitle(titleLabel);
-*/
+
         mLoadingStartTime = System.currentTimeMillis();
         mLoadingLastUpdateTime = System.currentTimeMillis();
         mLoadingKeepGoing = true;
@@ -443,17 +365,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         mProgressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         mProgressDialog.setTitle(R.string.progress_dialog_loading);
         mProgressDialog.setCancelable(true);
-        DialogInterface d = new DialogInterface() {
-            @Override
-            public void cancel() {
-                mLoadingKeepGoing = false;
-            }
 
-            @Override
-            public void dismiss() {
-
-            }
-        };
         //mProgressDialog.setOnCancelListener(d);
         mProgressDialog.show();
 
@@ -533,8 +445,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 } catch (final Exception e) {
                     mProgressDialog.dismiss();
                     e.printStackTrace();
-                    //mInfo.setText(e.toString());
-
                     Runnable runnable = new Runnable() {
                         public void run() {
                             handleFatalError(
@@ -565,7 +475,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             final CharSequence errorInternalName,
             final CharSequence errorString,
             final Exception exception) {
-        Log.i("Ringdroid", "handleFatalError");
+        Log.i("SAL", "handleFatalError");
 
         SharedPreferences prefs = getPreferences(Context.MODE_PRIVATE);
         int failureCount = prefs.getInt(PREF_ERROR_COUNT, 0);
@@ -573,7 +483,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         prefsEditor.putInt(PREF_ERROR_COUNT, failureCount + 1);
         prefsEditor.commit();
 
-        // Just show a simple "write error" message
         showFinalAlert(exception, errorString);
 
     }
@@ -593,7 +502,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
             title = getResources().getText(R.string.alert_title_failure);
             setResult(RESULT_CANCELED, new Intent());
         } else {
-            Log.i("Ringdroid", "Success: " + message);
+            Log.i("SAL", "Success: " + message);
             title = getResources().getText(R.string.alert_title_success);
         }
 
@@ -619,7 +528,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         return stream.toString();
     }
 
-
     private String getExtensionFromFilename(String filename) {
         return filename.substring(filename.lastIndexOf('.'),
                 filename.length());
@@ -628,31 +536,24 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     private void finishOpeningSoundFile() {
         mWaveformView.setSoundFile(mSoundFile);
         mWaveformView.recomputeHeights(mDensity);
-
         mMaxPos = mWaveformView.maxPos();
-        mLastDisplayedStartPos = -1;
-        mLastDisplayedEndPos = -1;
-
         mTouchDragging = false;
-
         setmOffset(0);
         mOffsetGoal = 0;
-        mFlingVelocity = 0;
+        setmFlingVelocity(0);
         resetPositions();
         if (mEndPos > mMaxPos)
             mEndPos = mMaxPos;
-
-        /*
-        mCaption =
-                mSoundFile.getFiletype() + ", " +
-                        mSoundFile.getSampleRate() + " Hz, " +
-                        mSoundFile.getAvgBitrateKbps() + " kbps, " +
-                        formatTime(mMaxPos) + " " +
-                        getResources().getString(R.string.time_seconds);
-        mInfo.setText(mCaption);
-*/
-
         updateDisplay();
+    }
+
+    private synchronized void handlePause() {
+        if (player != null && player.isPlaying()) {
+            player.pause();
+        }
+        mWaveformView.setPlayback(-1);
+        mIsPlaying = false;
+        // enableDisableButtons();
     }
 
     private void resetPositions() {
@@ -664,175 +565,22 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         mTouchDragging = true;
         mTouchStart = x;
         mTouchInitialOffset = getmOffset();
-        mFlingVelocity = 0;
+        setmFlingVelocity(0);
         mWaveformTouchStartMsec = System.currentTimeMillis();
     }
 
     public void waveformTouchMove(float x) {
-
          setmOffset(trap((int)(mTouchInitialOffset + (mTouchStart - x))));
          updateDisplay();
-
     }
 
     private int trap(int pos) {
         if (pos < 0)
             return 0;
-        if (pos > mMaxPos)
-            return mMaxPos;
+        if (pos + mWidth > mMaxPos)
+            pos = mMaxPos - mWidth;
         return pos;
     }
-
-    private synchronized void updateDisplay() {
-        if (mIsPlaying) {
-            int now = player.getCurrentPosition() + mPlayStartOffset;
-            int frames = mWaveformView.millisecsToPixels(now);
-            mWaveformView.setPlayback(frames);
-            setOffsetGoalNoUpdate(frames - mWidth / 2);
-            if (now >= mPlayEndMsec) {
-                handlePause();
-            }
-        }
-
-        if (!mTouchDragging) {
-            int offsetDelta;
-
-            if (mFlingVelocity != 0) {
-                float saveVel = mFlingVelocity;
-
-                offsetDelta = mFlingVelocity / 30;
-                float threshold = 80;
-                if (mFlingVelocity > threshold) {
-                    mFlingVelocity -= threshold;
-                } else if (mFlingVelocity < -threshold) {
-                    mFlingVelocity += threshold;
-                } else {
-                    mFlingVelocity = 0;
-                }
-
-                setmOffset(getmOffset() + offsetDelta);
-
-                if (getmOffset() + mWidth / 2 > mMaxPos) {
-                    setmOffset(mMaxPos - mWidth / 2);
-                    mFlingVelocity = 0;
-                }
-                if (getmOffset() < 0) {
-                    setmOffset(0);
-                    mFlingVelocity = 0;
-                }
-                mOffsetGoal = getmOffset();
-            } else {
-                offsetDelta = mOffsetGoal - getmOffset();
-
-                if (offsetDelta > 10)
-                    offsetDelta = offsetDelta / 10;
-                else if (offsetDelta > 0)
-                    offsetDelta = 1;
-                else if (offsetDelta < -10)
-                    offsetDelta = offsetDelta / 10;
-                else if (offsetDelta < 0)
-                    offsetDelta = -1;
-                else
-                    offsetDelta = 0;
-
-                setmOffset(getmOffset() + offsetDelta);
-            }
-        }
-
-        mWaveformView.setParameters(mStartPos, mEndPos, getmOffset());
-        mWaveformView.invalidate();
-
-        // Update TimeScroll view data
-        float relativeOffset = (float) getmOffset() /mWaveformView.getNumOfHeightAtThisZoomLevel();
-        float relativeWidth = (float)mWaveformView.getMeasuredWidth()/mWaveformView.getNumOfHeightAtThisZoomLevel();
-        mTimeScrollView.setData(relativeOffset,relativeWidth);
-        mTimeScrollView.invalidate();
-
-        /*
-        mStartMarker.setContentDescription(
-                getResources().getText(R.string.start_marker) + " " +
-                        formatTime(mStartPos));
-        mEndMarker.setContentDescription(
-                getResources().getText(R.string.end_marker) + " " +
-                        formatTime(mEndPos));
-
-        int startX = mStartPos - mOffset - mMarkerLeftInset;
-        if (startX + mStartMarker.getWidth() >= 0) {
-            if (!mStartVisible) {
-                // Delay this to avoid flicker
-                mHandler.postDelayed(new Runnable() {
-                    public void run() {
-                        mStartVisible = true;
-                        mStartMarker.setAlpha(255);
-                    }
-                }, 0);
-            }
-        } else {
-            if (mStartVisible) {
-                mStartMarker.setAlpha(0);
-                mStartVisible = false;
-            }
-            startX = 0;
-        }
-
-        int endX = mEndPos - mOffset - mEndMarker.getWidth() +
-                mMarkerRightInset;
-        if (endX + mEndMarker.getWidth() >= 0) {
-            if (!mEndVisible) {
-                // Delay this to avoid flicker
-                mHandler.postDelayed(new Runnable() {
-                    public void run() {
-                        mEndVisible = true;
-                        mEndMarker.setAlpha(255);
-                    }
-                }, 0);
-            }
-        } else {
-            if (mEndVisible) {
-                mEndMarker.setAlpha(0);
-                mEndVisible = false;
-            }
-            endX = 0;
-        }
-
-        mStartMarker.setLayoutParams(
-                new AbsoluteLayout.LayoutParams(
-                        AbsoluteLayout.LayoutParams.WRAP_CONTENT,
-                        AbsoluteLayout.LayoutParams.WRAP_CONTENT,
-                        startX,
-                        mMarkerTopOffset));
-
-        mEndMarker.setLayoutParams(
-                new AbsoluteLayout.LayoutParams(
-                        AbsoluteLayout.LayoutParams.WRAP_CONTENT,
-                        AbsoluteLayout.LayoutParams.WRAP_CONTENT,
-                        endX,
-                        mWaveformView.getMeasuredHeight() -
-                                mEndMarker.getHeight() - mMarkerBottomOffset));
-        */
-    }
-
-    private void setOffsetGoalNoUpdate(int offset) {
-        if (mTouchDragging) {
-            return;
-        }
-
-        mOffsetGoal = offset;
-        if (mOffsetGoal + mWidth / 2 > mMaxPos)
-            mOffsetGoal = mMaxPos - mWidth / 2;
-        if (mOffsetGoal < 0)
-            mOffsetGoal = 0;
-    }
-
-    private synchronized void handlePause() {
-        if (player != null && player.isPlaying()) {
-            player.pause();
-        }
-        mWaveformView.setPlayback(-1);
-        mIsPlaying = false;
-       // enableDisableButtons();
-    }
-
 
     public void waveformTouchEnd() {
         mTouchDragging = false;
@@ -926,10 +674,9 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     public void waveformFling(float vx) {
         mTouchDragging = false;
         mOffsetGoal = getmOffset();
-        mFlingVelocity = (int)(-vx);
+        setmFlingVelocity((int)(-vx));
         updateDisplay();
     }
-
 
     public void waveformZoomIn() {
         mWaveformView.zoomIn();
@@ -960,34 +707,131 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     public void waveformDraw() {
         mWidth = mWaveformView.getMeasuredWidth();
         System.out.println(mWidth);
-        if (mOffsetGoal != getmOffset() && !mKeyDown)
+        if (mOffsetGoal != getmOffset())
             updateDisplay();
         else if (mIsPlaying) {
             updateDisplay();
-        } else if (mFlingVelocity != 0) {
+        } else if (getmFlingVelocity() != 0) {
             updateDisplay();
         }
     }
 
+    private synchronized void updateDisplay() {
+        if (mIsPlaying) {
+            int now = player.getCurrentPosition() + mPlayStartOffset;
+            int frames = mWaveformView.millisecsToPixels(now);
+            mWaveformView.setPlayback(frames);
+            setOffsetGoalNoUpdate(frames - mWidth / 2);
+            if (now >= mPlayEndMsec) {
+                handlePause();
+            }
+        }
+
+        if (!mTouchDragging) {
+            int offsetDelta;
+
+            if (getmFlingVelocity() != 0) {
+                float saveVel = getmFlingVelocity();
+
+                offsetDelta = getmFlingVelocity() / 30;
+                float threshold = 80;
+                if (getmFlingVelocity() > threshold) {
+                    setmFlingVelocity((int)(getmFlingVelocity() - threshold));
+                } else if (getmFlingVelocity() < -threshold) {
+                    setmFlingVelocity((int)(getmFlingVelocity() + threshold));
+                } else {
+                    setmFlingVelocity(0);
+                }
+
+                setmOffset(getmOffset() + offsetDelta);
+
+                if (getmOffset() + mWidth > mMaxPos) {
+                    setmOffset(mMaxPos - mWidth);
+                    setmFlingVelocity(0);
+                }
+                if (getmOffset() < 0) {
+                    setmOffset(0);
+                    setmFlingVelocity(0);
+                }
+                mOffsetGoal = getmOffset();
+            } else {
+                if(!mWaitingForUserGesture){  // When fling reach 0, we wait for new user gestures before returning to playback
+                    offsetDelta = mOffsetGoal - getmOffset();
+
+                    if (offsetDelta > 10)
+                        offsetDelta = offsetDelta / 10;
+                    else if (offsetDelta > 0)
+                        offsetDelta = 1;
+                    else if (offsetDelta < -10)
+                        offsetDelta = offsetDelta / 10;
+                    else if (offsetDelta < 0)
+                        offsetDelta = -1;
+                    else
+                        offsetDelta = 0;
+
+                    setmOffset(getmOffset() + offsetDelta);
+                }
+            }
+        }
+
+        mWaveformView.setParameters(mStartPos, mEndPos, getmOffset());
+        mWaveformView.invalidate();
+
+        // Update TimeScroll view data
+        float relativeOffset = (float) getmOffset() /mWaveformView.getNumOfHeightAtThisZoomLevel();
+        float relativeWidth = (float)mWaveformView.getMeasuredWidth()/mWaveformView.getNumOfHeightAtThisZoomLevel();
+        mTimeScrollView.setData(relativeOffset,relativeWidth);
+        mTimeScrollView.invalidate();
+    }
+
+    private void setOffsetGoalNoUpdate(int offset) {
+        if (mTouchDragging) {
+            return;
+        }
+
+        mOffsetGoal = offset;
+        if (mOffsetGoal + mWidth > mMaxPos)
+            mOffsetGoal = mMaxPos - mWidth;
+        if (mOffsetGoal < 0)
+            mOffsetGoal = 0;
+    }
+
+    public int getmOffset() {
+        return mOffset;
+    }
+
+    public void setmOffset(int mOffset) {
+        this.mOffset = mOffset;
+    }
+
+    public int getmFlingVelocity() {
+        return mFlingVelocity;
+    }
+
+    public void setmFlingVelocity(int mFlingVelocity) {
+        this.mFlingVelocity = mFlingVelocity;
+        if(mFlingVelocity == 0){
+            mWaitingForUserGesture = true;
+            mWaitHandler.removeCallbacks(mEndWaitDelayed);
+            mWaitHandler.postDelayed(mEndWaitDelayed, mWaitingTime);
+        }
+    }
 
     @Override
     public void onValueChange(NumberPicker picker, int oldVal, int newVal) {
-
         Log.i("value is",""+newVal);
-
     }
 
     public void show()
     {
-
         final Dialog d = new Dialog(PlayerActivity.this);
         d.setTitle("NumberPicker");
         d.setContentView(R.layout.time_picker_dialog);
         Button b1 = (Button) d.findViewById(R.id.button1);
         Button b2 = (Button) d.findViewById(R.id.button2);
         final NumberPicker np1 = (NumberPicker) d.findViewById(R.id.numberPicker1);
-        final NumberPicker np2 = (NumberPicker) d.findViewById(R.id.numberPicker1);
-        final NumberPicker np3 = (NumberPicker) d.findViewById(R.id.numberPicker1);
+        final NumberPicker np2 = (NumberPicker) d.findViewById(R.id.numberPicker2);
+        final NumberPicker np3 = (NumberPicker) d.findViewById(R.id.numberPicker3);
         np1.setMaxValue(500); // max value 100
         np1.setMinValue(0);   // min value 0
         np1.setWrapSelectorWheel(true);
@@ -1019,112 +863,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         d.show();
     }
 
-    public int getmOffset() {
-        return mOffset;
-    }
-
-    public void setmOffset(int mOffset) {
-        this.mOffset = mOffset;
-    }
-
-
-
-    /*
-    private void enableDisableButtons() {
-        if (mIsPlaying) {
-            mPlayButton.setImageResource(android.R.drawable.ic_media_pause);
-            mPlayButton.setContentDescription(getResources().getText(R.string.stop));
-        } else {
-            mPlayButton.setImageResource(android.R.drawable.ic_media_play);
-            mPlayButton.setContentDescription(getResources().getText(R.string.play));
-        }
-    }
-    */
-
-
-
-    /**
-     * A simple class that draws waveform data received from a
-     * Visualizer.OnDataCaptureListener#onWaveFormDataCapture
-     */
-
-    /*
-    class VisualizerView extends View {
-        private byte[] mBytes;
-        private float[] mPoints;
-        private Rect mRect = new Rect();
-        private Paint mForePaint = new Paint();
-        public VisualizerView(Context context) {
-            super(context);
-            init();
-        }
-        private void init() {
-            mBytes = null;
-            mForePaint.setStrokeWidth(1f);
-            mForePaint.setAntiAlias(true);
-            mForePaint.setColor(Color.rgb(0, 128, 255));
-        }
-        public void updateVisualizer(byte[] bytes) {
-            mBytes = bytes;
-            invalidate();
-        }
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            if (mBytes == null) {
-                return;
-            }
-            if (mPoints == null || mPoints.length < mBytes.length * 4) {
-                mPoints = new float[mBytes.length * 4];
-            }
-            mRect.set(0, 0, getWidth(), getHeight());
-            for (int i = 0; i < mBytes.length - 1; i++) {
-                mPoints[i * 4] = mRect.width() * i / (mBytes.length - 1);
-                mPoints[i * 4 + 1] = mRect.height() / 2
-                        + ((byte) (mBytes[i] + 128)) * (mRect.height() / 2) / 128;
-                mPoints[i * 4 + 2] = mRect.width() * (i + 1) / (mBytes.length - 1);
-                mPoints[i * 4 + 3] = mRect.height() / 2
-                        + ((byte) (mBytes[i + 1] + 128)) * (mRect.height() / 2) / 128;
-            }
-            canvas.drawLines(mPoints, mForePaint);
-        }
-    }*/
-
-    /*
-    private void setupVisualizerFxAndUI() {
-    // Create a VisualizerView (defined below), which will render the simplified audio
-    // wave form to a Canvas.
-        try {
-            mLinearLayout = new LinearLayout(this);
-            mLinearLayout.setOrientation(LinearLayout.VERTICAL);
-
-            mVisualizerView = new VisualizerView(this);
-            mVisualizerView.setLayoutParams(new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    (int)(VISUALIZER_HEIGHT_DIP * getResources().getDisplayMetrics().density)));
-            mLinearLayout.addView(mVisualizerView);
-            // Create the Visualizer object and attach it to our media player.
-            System.out.println(player.getAudioSessionId());
-            mVisualizer = new Visualizer(player.getAudioSessionId());
-            mVisualizer.setCaptureSize(Visualizer.getCaptureSizeRange()[1]);
-            mVisualizer.setDataCaptureListener(new Visualizer.OnDataCaptureListener() {
-
-                public void onWaveFormDataCapture(Visualizer visualizer, byte[] bytes,
-                                                  int samplingRate) {
-                    mVisualizerView.updateVisualizer(bytes);
-                }
-
-                public void onFftDataCapture(Visualizer visualizer, byte[] bytes, int samplingRate) {
-
-
-                }
-            }, Visualizer.getMaxCaptureRate() / 2, true, false);
-            //setContentView(mLinearLayout);
-        } catch(Exception e){
-            e.printStackTrace();
-        }
-
-    }*/
 
 
 
