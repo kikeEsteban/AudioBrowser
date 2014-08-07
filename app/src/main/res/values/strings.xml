@@ -18,5 +18,8 @@
     <string name="alert_title_success">Success</string>
     <string name="alert_title_failure">Error</string>
     <string name="alert_ok_button">OK</string>
+    <string name="no_loop_mode">no loop</string>
+    <string name="continuous_loop_mode">loop</string>
+    <string name="once_loop_mode">once</string>
 
 </resources>

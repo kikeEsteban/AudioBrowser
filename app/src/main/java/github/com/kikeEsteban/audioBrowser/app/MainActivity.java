@@ -1,6 +1,7 @@
 package github.com.kikeEsteban.audioBrowser.app;
 
 
+import android.app.FragmentManager;
 import android.app.ListActivity;
 import android.content.Context;
 import android.content.Intent;
@@ -54,6 +55,10 @@ public class MainActivity extends ListActivity {
     }
 
     public void launchPlayerActivity(String songFile){
+
+        FragmentManager fm = getFragmentManager();
+        fm.popBackStack();
+
         Intent intent = new Intent(this, PlayerActivity.class);
         Bundle b = new Bundle();
         b.putString("songFile", songFile);

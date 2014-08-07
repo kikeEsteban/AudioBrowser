@@ -3,10 +3,6 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:paddingLeft="@dimen/activity_horizontal_margin"
-    android:paddingRight="@dimen/activity_horizontal_margin"
-    android:paddingTop="@dimen/activity_vertical_margin"
-    android:paddingBottom="@dimen/activity_vertical_margin"
     android:background="#111111"
     tools:context="github.com.kikeEsteban.audioBrowser.app.PlayerActivity">
     <github.com.kikeEsteban.audioBrowser.app.TimeScrollView
@@ -48,12 +44,14 @@
             android:background="@android:drawable/screen_background_light"
             >
 
-            <ImageButton
+            <Button
                 android:layout_width="fill_parent"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
+                android:text="start"
+                android:textSize="15sp"
                 android:id="@+id/loop_start"
-                android:src="@android:drawable/ic_media_rew"/>
+               />
 
             <Button
                 android:layout_width="fill_parent"
@@ -63,12 +61,13 @@
                 android:id="@+id/loop_start_time"
                 android:layout_height="wrap_content" />
 
-            <ImageButton
+            <Button
                 android:layout_width="fill_parent"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:id="@+id/loop_mode"
-                android:src="@android:drawable/ic_media_play"/>
+                android:text="loop"
+                android:textSize="15sp"/>
 
             <Button
                 android:layout_width="fill_parent"
@@ -78,12 +77,13 @@
                 android:id="@+id/loop_end_time"
                 android:layout_height="wrap_content" />
 
-            <ImageButton
+            <Button
                 android:layout_width="fill_parent"
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:id="@+id/loop_end"
-                android:src="@android:drawable/ic_media_ff"
+                android:text="end"
+                android:textSize="15sp"
                 />
 
         </LinearLayout>

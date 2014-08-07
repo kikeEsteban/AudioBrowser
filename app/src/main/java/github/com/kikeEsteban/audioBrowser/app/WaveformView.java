@@ -57,6 +57,8 @@ public class WaveformView extends View {
     // Colors
     private Paint mGridPaint;
     private Paint mSelectedLinePaint;
+    private Paint mSelectedAreaPaint;
+    private Paint mSelectedAreaOncePaint;
     private Paint mUnselectedLinePaint;
     private Paint mUnselectedBkgndLinePaint;
     private Paint mBorderLinePaint;
@@ -85,7 +87,11 @@ public class WaveformView extends View {
     private GLRenderer mWaveRenderer;
     private int mCurrentNumOfHeights = 0;
 
+    public static final int NO_LOOP_MODE = 0;
+    public static final int CONTINUOUS_LOOP_MODE = 1;
+    public static final int ONCE_LOOP_MODE = 2;
 
+    private int mLoopMode = CONTINUOUS_LOOP_MODE;
 
     public WaveformView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -100,7 +106,16 @@ public class WaveformView extends View {
         mSelectedLinePaint = new Paint();
         mSelectedLinePaint.setAntiAlias(false);
         mSelectedLinePaint.setColor(
-                Color.argb(255,255,0,0));
+                Color.argb(255,255,255,0));
+        mSelectedAreaPaint = new Paint();
+        mSelectedAreaPaint.setAntiAlias(false);
+        mSelectedAreaPaint.setColor(
+                Color.argb(100,255,255,0));
+        mSelectedAreaOncePaint = new Paint();
+        mSelectedAreaOncePaint.setAntiAlias(false);
+        mSelectedAreaOncePaint.setColor(
+                Color.argb(100,205,105,0));
+
         mUnselectedLinePaint = new Paint();
         mUnselectedLinePaint.setAntiAlias(false);
                 mUnselectedLinePaint.setColor(
@@ -397,61 +412,37 @@ public class WaveformView extends View {
         }
 
         mWaveRenderer.setData(newHeights,start);
-/*
-        // Draw waveform
-        for (i = 0; i < width; i++) {
-            Paint paint;
-            if (i + start >= mSelectionStart &&
-                i + start < mSelectionEnd) {
-                paint = mSelectedLinePaint;
-            } else {
-                drawWaveformLine(canvas, i, 0, measuredHeight,
-                                 mUnselectedBkgndLinePaint);
-                paint = mUnselectedLinePaint;
-            }
-            drawWaveformLine(
-                canvas, i,
-                ctr - mHeightsAtThisZoomLevel[start + i],
-                ctr + 1 + mHeightsAtThisZoomLevel[start + i],
-                paint);
 
-            if (i + start == mPlaybackPos) {
-                canvas.drawLine(i, 0, i, measuredHeight, mPlaybackLinePaint);
-            }
-        }
-
-*/
-        /*
-        for (i = 0; i < width; i++) {
-            if (i + start >= mSelectionStart &&
-                    i + start < mSelectionEnd) {
-                if (i + start == mPlaybackPos) {
-                    canvas.drawLine(i, 0, i, measuredHeight, mPlaybackLinePaint);
-                }
-            }
-        }
-        */
         if(mPlaybackPos-start>=0){
             canvas.drawLine(mPlaybackPos-start, 0, mPlaybackPos-start, measuredHeight, mPlaybackLinePaint);
         }
 
-
-        // If we can see the right edge of the waveform, draw the
-        // non-waveform area to the right as unselected
-        for (i = width; i < measuredWidth; i++) {
-            drawWaveformLine(canvas, i, 0, measuredHeight,
-                             mUnselectedBkgndLinePaint);            
+        if((mSelectionStart-start>=0)&& (mSelectionStart-start<measuredWidth)){
+            if(mLoopMode == CONTINUOUS_LOOP_MODE)
+                canvas.drawRect(0,0,mSelectionStart-start,measuredHeight,mSelectedAreaPaint);
+            else if(mLoopMode == ONCE_LOOP_MODE)
+                canvas.drawRect(0,0,mSelectionStart-start,measuredHeight,mSelectedAreaOncePaint);
+            canvas.drawLine(mSelectionStart-start, 0, mSelectionStart-start, measuredHeight, mSelectedLinePaint);
+        } else if(mSelectionStart-start>measuredWidth){
+            if(mLoopMode == CONTINUOUS_LOOP_MODE)
+                canvas.drawRect(0,0,measuredWidth,measuredHeight,mSelectedAreaPaint);
+            else if(mLoopMode == ONCE_LOOP_MODE)
+                canvas.drawRect(0,0,measuredWidth,measuredHeight,mSelectedAreaOncePaint);
         }
 
-        // Draw borders
-        canvas.drawLine(
-            mSelectionStart - mOffset + 0.5f, 30,
-            mSelectionStart - mOffset + 0.5f, measuredHeight,
-            mBorderLinePaint);
-        canvas.drawLine(
-            mSelectionEnd - mOffset + 0.5f, 0,
-            mSelectionEnd - mOffset + 0.5f, measuredHeight - 30,
-            mBorderLinePaint);
+        if((mSelectionEnd-start>=0) && (mSelectionEnd-start<measuredWidth)) {
+            if(mLoopMode == CONTINUOUS_LOOP_MODE)
+                canvas.drawRect(mSelectionEnd-start,0,measuredWidth,measuredHeight,mSelectedAreaPaint);
+            else if(mLoopMode == ONCE_LOOP_MODE){
+                canvas.drawRect(mSelectionEnd-start,0,measuredWidth,measuredHeight,mSelectedAreaOncePaint);
+            }
+            canvas.drawLine(mSelectionEnd - start, 0, mSelectionEnd - start, measuredHeight, mSelectedLinePaint);
+        } else if(mSelectionEnd-start<0){
+            if(mLoopMode == CONTINUOUS_LOOP_MODE)
+                canvas.drawRect(0,0,measuredWidth,measuredHeight,mSelectedAreaPaint);
+            else if(mLoopMode == ONCE_LOOP_MODE)
+                canvas.drawRect(0,0,measuredWidth,measuredHeight,mSelectedAreaOncePaint);
+        }
 
         // Draw timecode
         double timecodeIntervalSecs = 1.0;
@@ -494,6 +485,14 @@ public class WaveformView extends View {
         if (mListener != null) {
             mListener.waveformDraw();
         }
+    }
+
+    public void setSelectionStart(int startFrame){
+        mSelectionStart = startFrame;
+    }
+
+    public void setSelectionEnd(int endFrame){
+        mSelectionEnd = endFrame;
     }
 
     public int getNumOfFrames(){
@@ -629,7 +628,7 @@ public class WaveformView extends View {
         } else {
             mZoomLevel = 0;
         }
-
+        computeIntsForThisZoomLevel();
         mInitialized = true;
     }
 
@@ -645,5 +644,9 @@ public class WaveformView extends View {
                 (int)(mValuesByZoomLevel[mZoomLevel][i] * halfHeight);
         }
         mCurrentNumOfHeights = mHeightsAtThisZoomLevel.length;
+    }
+
+    void setLoopMode(int loopMode){
+        mLoopMode = loopMode;
     }
 }

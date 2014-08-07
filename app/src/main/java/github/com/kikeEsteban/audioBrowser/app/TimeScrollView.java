@@ -27,13 +27,21 @@ public class TimeScrollView extends View {
     Paint backgroundPaint;
     Paint screenPaint;
     Paint noLoopPaint;
-    Paint loopPaint;
-    Paint startLoopPaint;
-    Paint endLoopPaint;
+    Paint noLoopOncePaint;
     Paint playbackPaint;
+    Paint selectorLoopPaint;
 
     private float mScreenOffset;
     private float mScreenWidth;
+    private float mStart;
+    private float mEnd;
+    private float mLoopMode;
+    private float mPlayback;
+
+
+    public static final int NO_LOOP_MODE = 0;
+    public static final int CONTINUOUS_LOOP_MODE = 1;
+    public static final int ONCE_LOOP_MODE = 2;
 
     public TimeScrollView(Context context) {
         super(context);
@@ -84,28 +92,25 @@ public class TimeScrollView extends View {
         backgroundPaint.setARGB(255,0,255,255);
 
         noLoopPaint = new Paint();
-        noLoopPaint.setARGB(255,0,255,255);
+        noLoopPaint.setARGB(100,255,255,0);
 
-        loopPaint = new Paint();
-        loopPaint.setARGB(255,0,255,255);
+        noLoopOncePaint = new Paint();
+        noLoopOncePaint.setARGB(100,205,110,0);
 
-        startLoopPaint = new Paint();
-        startLoopPaint.setARGB(255,0,255,255);
+        selectorLoopPaint = new Paint();
+        selectorLoopPaint.setARGB(255,255,255,0);
 
-        endLoopPaint = new Paint();
-        endLoopPaint.setARGB(255,0,255,255);
+        playbackPaint = new Paint();
+        playbackPaint.setARGB(255,255,0,0);
 
         screenPaint = new Paint();
-        screenPaint.setARGB(255,255,0,0);
+        screenPaint.setARGB(255,200,200,200);
         screenPaint.setStyle(Paint.Style.STROKE);
 
-
-        // Update TextPaint and text measurements from attributes
-        invalidateTextPaintAndMeasurements();
     }
 
     // Offset and width within [0 .. 1] range
-    public synchronized void setData(float offset, float width){
+    public synchronized void setData(float offset, float width, float start, float end, float loopMode, float playback){
         if(offset < 0)
             offset = 0;
         if(width < 0)
@@ -116,25 +121,21 @@ public class TimeScrollView extends View {
             width = 1;
         mScreenOffset = offset;
         mScreenWidth = width;
+        mStart = start;
+        mEnd = end;
+        mLoopMode = loopMode;
+        mPlayback = playback;
     }
 
     public synchronized float[] getData(){
-        float[] data = new float[2];
+        float[] data = new float[6];
         data[0] = mScreenOffset;
         data[1] = mScreenWidth;
+        data[2] = mStart;
+        data[3] = mEnd;
+        data[4] = mLoopMode;
+        data[5] = mPlayback;
         return data;
-    }
-
-    private void invalidateTextPaintAndMeasurements() {
-        if(!this.isInEditMode()){
-//            mTextPaint.setTextSize(mExampleDimension);
-//            mTextPaint.setColor(mExampleColor);
-          //  mTextWidth = mTextPaint.measureText(mExampleString);
-
-//            Paint.FontMetrics fontMetrics = mTextPaint.getFontMetrics();
-//            mTextHeight = fontMetrics.bottom;
-        }
-
     }
 
     @Override
@@ -154,10 +155,32 @@ public class TimeScrollView extends View {
         // Draw the text.
 
         float[] data = getData();
+
         float offset = data[0]*canvas.getWidth();
         float width = data[1]*canvas.getWidth();
-        canvas.drawRect(0,5*canvas.getHeight()/8,canvas.getWidth(),3*canvas.getHeight()/8,backgroundPaint);
+        float start = data[2]*canvas.getWidth();
+        float end = data[3]*canvas.getWidth();
+        if(end == canvas.getWidth())
+            end -= 1;
+        float loopMode = data[4];
+        float playback = data[5]*canvas.getWidth();
+
+        if(loopMode == NO_LOOP_MODE){
+            canvas.drawRect(0,5*canvas.getHeight()/8,canvas.getWidth(),3*canvas.getHeight()/8,backgroundPaint);
+        } else if(loopMode == CONTINUOUS_LOOP_MODE){
+            canvas.drawRect(0,5*canvas.getHeight()/8,start,3*canvas.getHeight()/8,noLoopPaint);
+            canvas.drawRect(start,5*canvas.getHeight()/8,end,3*canvas.getHeight()/8,backgroundPaint);
+            canvas.drawRect(end,5*canvas.getHeight()/8,canvas.getWidth(),3*canvas.getHeight()/8,noLoopPaint);
+        } else if(loopMode == ONCE_LOOP_MODE){
+            canvas.drawRect(0,5*canvas.getHeight()/8,start,3*canvas.getHeight()/8,noLoopOncePaint);
+            canvas.drawRect(start,5*canvas.getHeight()/8,end,3*canvas.getHeight()/8,backgroundPaint);
+            canvas.drawRect(end,5*canvas.getHeight()/8,canvas.getWidth(),3*canvas.getHeight()/8,noLoopOncePaint);
+        }
+
         canvas.drawRect(offset,5,offset+width,canvas.getHeight()-5,screenPaint);
+        canvas.drawLine(start,5,start,canvas.getHeight()-5,selectorLoopPaint);
+        canvas.drawLine(end,5,end,canvas.getHeight()-5,selectorLoopPaint);
+        canvas.drawLine(playback,5,playback,canvas.getHeight()-5,playbackPaint);
 
         /*canvas.drawText(mExampleString,
                 paddingLeft + (contentWidth - mTextWidth) / 2,
@@ -180,51 +203,7 @@ public class TimeScrollView extends View {
         return mExampleString;
     }
 
-    /**
-     * Sets the view's example string attribute value. In the example view, this string
-     * is the text to draw.
-     * @param exampleString The example string attribute value to use.
-     */
-    public void setExampleString(String exampleString) {
-        mExampleString = exampleString;
-        invalidateTextPaintAndMeasurements();
-    }
 
-    /**
-     * Gets the example color attribute value.
-     * @return The example color attribute value.
-     */
-    public int getExampleColor() {
-        return mExampleColor;
-    }
-
-    /**
-     * Sets the view's example color attribute value. In the example view, this color
-     * is the font color.
-     * @param exampleColor The example color attribute value to use.
-     */
-    public void setExampleColor(int exampleColor) {
-        mExampleColor = exampleColor;
-        invalidateTextPaintAndMeasurements();
-    }
-
-    /**
-     * Gets the example dimension attribute value.
-     * @return The example dimension attribute value.
-     */
-    public float getExampleDimension() {
-        return mExampleDimension;
-    }
-
-    /**
-     * Sets the view's example dimension attribute value. In the example view, this dimension
-     * is the font size.
-     * @param exampleDimension The example dimension attribute value to use.
-     */
-    public void setExampleDimension(float exampleDimension) {
-        mExampleDimension = exampleDimension;
-        invalidateTextPaintAndMeasurements();
-    }
 
     /**
      * Gets the example drawable attribute value.

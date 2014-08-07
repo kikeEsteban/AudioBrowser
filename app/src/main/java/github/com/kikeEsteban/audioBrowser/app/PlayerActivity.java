@@ -2,6 +2,7 @@ package github.com.kikeEsteban.audioBrowser.app;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.FragmentManager;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -20,12 +21,10 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.NumberPicker;
-import android.widget.SeekBar;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.PrintWriter;
 
 import github.com.kikeEsteban.audioBrowser.app.soundfile.CheapSoundFile;
@@ -38,6 +37,12 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
      * Preference names
      */
     public static final String PREF_ERROR_COUNT = "error_count";
+
+    public static final int NO_LOOP_MODE = 0;
+    public static final int CONTINUOUS_LOOP_MODE = 1;
+    public static final int ONCE_LOOP_MODE = 2;
+
+    private int mLoopMode = CONTINUOUS_LOOP_MODE;
 
     // loading
     private long mLoadingStartTime;
@@ -80,6 +85,8 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
     private TimeScrollView mTimeScrollView;
 
+    private boolean mPlayerInitialized = false;
+
     // Player
     private static final int UPDATE_FREQUENCY = 500;
 
@@ -96,10 +103,17 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     private Button startLoopTimeButton = null;
     private Button endLoopTimeButton = null;
 
+    private Button mStartLoopButton = null;
+    private Button mEndLoopButton = null;
+    private Button mLoopModeButton = null;
+
     private boolean mWaitingForUserGesture = false;
     private int mWaitingTime = 2000;
     final Handler mWaitHandler = new Handler();
     Runnable mEndWaitDelayed;
+
+    private RetainedFragment dataFragment;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -112,25 +126,45 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         startLoopTimeButton = (Button)findViewById(R.id.loop_start_time);
         endLoopTimeButton = (Button)findViewById(R.id.loop_end_time);
         mTimeScrollView = (TimeScrollView)findViewById(R.id.timeScroll);
+        mStartLoopButton = (Button)findViewById(R.id.loop_start);
+        mEndLoopButton = (Button)findViewById(R.id.loop_end);
+        mLoopModeButton = (Button)findViewById(R.id.loop_mode);
 
         playButton.setOnClickListener(onButtonClick);
         nextButton.setOnClickListener(onButtonClick);
         prevButton.setOnClickListener(onButtonClick);
+        mStartLoopButton.setOnClickListener(onButtonClick);
+        mEndLoopButton.setOnClickListener(onButtonClick);
+        mLoopModeButton.setOnClickListener(onButtonClick);
 
-        // Start player
-
-        mHandler = new Handler();
-
-        player = new MediaPlayer();
-        player.setOnCompletionListener(onCompletion);
-        player.setOnErrorListener(onError);
-
-        Bundle b = getIntent().getExtras();
-        currentFile = b.getString("songFile");
-
-        mIsPlaying = false;
-        mFilename = currentFile;
-        mSoundFile = null;
+        mLoopModeButton.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                // TODO Auto-generated method stub
+                setLoopMode(ONCE_LOOP_MODE);
+                return true;
+            }
+        });
+        startLoopTimeButton.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+                show(true);
+            }
+        });
+        endLoopTimeButton.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+                show(false);
+            }
+        });
+        mEndWaitDelayed = new Runnable() {
+            @Override
+            public void run() {
+                mWaitingForUserGesture = false;
+            }
+        };
 
         WaveSurfaceView waveSurfaceView = (WaveSurfaceView)findViewById(R.id.waveform2);
 
@@ -142,37 +176,84 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
         mDensity = metrics.density;
 
-        if (mSoundFile != null && !mWaveformView.hasSoundFile()) {
+        // Start player
+
+        // find the retained fragment on activity restarts
+        FragmentManager fm = getFragmentManager();
+        dataFragment = (RetainedFragment) fm.findFragmentByTag("data");
+
+        // create the fragment and data the first time
+        if (dataFragment == null) {
+            // add the fragment
+            dataFragment = new RetainedFragment();
+            fm.beginTransaction().add(dataFragment, "data").commit();
+
+            Bundle b = getIntent().getExtras();
+            currentFile = b.getString("songFile");
+
+            mIsPlaying = false;
+            mFilename = currentFile;
+            mSoundFile = null;
+
+            loadFromFile();
+
+            if (mSoundFile != null && !mWaveformView.hasSoundFile()) {
+                mWaveformView.setSoundFile(mSoundFile);
+                mWaveformView.recomputeHeights(mDensity);
+                mMaxPos = mWaveformView.maxPos();
+            }
+
+            RetainedData data = new RetainedData(player, mSoundFile,mFilename,mTitle,mArtist,mOffset,mStartPos,mEndPos,mWaveformView.getZoomLevel(),mLoopMode, mIsPlaying, mPlayerInitialized);
+            dataFragment.setData(data);
+        }
+        else {
+
+            RetainedData data = dataFragment.getData();
+            mSoundFile = data.getSoundFile();
+            mFilename = data.getFileName();
+            mTitle = data.getTitle();
+            mArtist = data.getArtist();
+            mPlayerInitialized = data.getPlayerInitialized();
+
             mWaveformView.setSoundFile(mSoundFile);
             mWaveformView.recomputeHeights(mDensity);
+            mWaveformView.setZoomLevel(data.getZoomLevel());
             mMaxPos = mWaveformView.maxPos();
+
+            mOffset = data.getOffset();
+            mStartPos =data.getStartPos();
+            mEndPos = data.getEndPos();
+            mLoopMode = data.getLoopMode();
+
+            player = data.getMediaPlayer();
+            mIsPlaying = data.getIsPlaying();
+            if(!mIsPlaying)
+            {
+                player.pause();
+                playButton.setImageResource(android.R.drawable.ic_media_play);
+                mIsPlaying = false;
+            }
+            else
+            {
+                int now = player.getCurrentPosition() + mPlayStartOffset;
+                int frames = mWaveformView.millisecsToPixels(now);
+                onPlay(frames);
+                playButton.setImageResource(android.R.drawable.ic_media_pause);
+                mIsPlaying = true;
+            }
+
+            setmOffset(mOffset);
+            setStartPos(mStartPos);
+            setEndPos(mEndPos);
+            setLoopMode(mLoopMode);
+
         }
 
-        if (!mFilename.equals("record")) {
-            loadFromFile();
+        String titleLabel = mTitle;
+        if (mArtist != null && mArtist.length() > 0) {
+            titleLabel += " - " + mArtist;
         }
-
-        startLoopTimeButton.setOnClickListener(new View.OnClickListener()
-        {
-            @Override
-            public void onClick(View v) {
-                show();
-            }
-        });
-        endLoopTimeButton.setOnClickListener(new View.OnClickListener()
-        {
-            @Override
-            public void onClick(View v) {
-                show();
-            }
-        });
-
-        mEndWaitDelayed = new Runnable() {
-            @Override
-            public void run() {
-                mWaitingForUserGesture = false;
-            }
-        };
+        setTitle(titleLabel);
 
     }
 
@@ -203,49 +284,20 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        mWaitHandler.removeCallbacks(mEndWaitDelayed);
-        player.stop();
-        player.reset();
-        player.release();
-        player = null;
+        if(!isChangingConfigurations()) {
+            mWaitHandler.removeCallbacks(mEndWaitDelayed);
+            player.stop();
+            player.reset();
+            player.release();
+            player = null;
+        } else if(!mPlayerInitialized){
+            player.start();
+            player.pause();
+            mPlayerInitialized = true;
+        }
+        RetainedData data = new RetainedData(player, mSoundFile,mFilename,mTitle,mArtist,mOffset,mStartPos,mEndPos,mWaveformView.getZoomLevel(), mLoopMode, mIsPlaying, mPlayerInitialized);
+        dataFragment.setData(data);
     }
-
-    private MediaPlayer.OnCompletionListener onCompletion = new MediaPlayer.OnCompletionListener() {
-        @Override
-        public void onCompletion(MediaPlayer mp) {
-            stopPlay();
-        }
-    };
-
-    private MediaPlayer.OnErrorListener onError = new MediaPlayer.OnErrorListener() {
-
-        @Override
-        public boolean onError(MediaPlayer mp, int what, int extra) {
-            // returning false will call the OnCompletionListener
-            return false;
-        }
-    };
-
-    private SeekBar.OnSeekBarChangeListener seekBarChanged = new SeekBar.OnSeekBarChangeListener() {
-        @Override
-        public void onStopTrackingTouch(SeekBar seekBar) {
-            isMoveingSeekBar = false;
-        }
-
-        @Override
-        public void onStartTrackingTouch(SeekBar seekBar) {
-            isMoveingSeekBar = true;
-        }
-
-        @Override
-        public void onProgressChanged(SeekBar seekBar, int progress,boolean fromUser) {
-            if(isMoveingSeekBar)
-            {
-                player.seekTo(progress);
-                Log.i("OnSeekBarChangeListener", "onProgressChanged");
-            }
-        }
-    };
 
     private View.OnClickListener onButtonClick = new View.OnClickListener() {
 
@@ -259,20 +311,18 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                     {
                         player.pause();
                         playButton.setImageResource(android.R.drawable.ic_media_play);
+                        mIsPlaying = false;
                     }
                     else
                     {
-                        if(isStarted)
-                        {
-                            player.start();
-                            playButton.setImageResource(android.R.drawable.ic_media_pause);
-                        }
-                        else
-                        {
-                            startPlay(currentFile);
-                        }
+                        int now = player.getCurrentPosition() + mPlayStartOffset;
+                        int frames = mWaveformView.millisecsToPixels(now);
+                        onPlay(frames);
+                        playButton.setImageResource(android.R.drawable.ic_media_pause);
+                        mIsPlaying = true;
+                        updateDisplay();
                     }
-
+                    mPlayerInitialized = true;
                     break;
                 }
                 case R.id.next:
@@ -292,6 +342,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 }
                 case R.id.prev:
                 {
+
                     // Move to loop points or to song begining
                     /*
                     int seekto = player.getCurrentPosition() - STEP_VALUE;
@@ -306,41 +357,112 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
 
                     break;
                 }
+                case R.id.loop_start:
+                {
+                    int now = player.getCurrentPosition() + mPlayStartOffset;
+                    int frames = mWaveformView.millisecsToPixels(now);
+                    setStartPos(frames);
+
+                    break;
+                }
+                case R.id.loop_mode:
+                {
+                    if(mLoopMode == NO_LOOP_MODE)
+                        setLoopMode(CONTINUOUS_LOOP_MODE);
+                    else if(mLoopMode == CONTINUOUS_LOOP_MODE)
+                        setLoopMode(NO_LOOP_MODE);
+                    else if(mLoopMode == ONCE_LOOP_MODE){
+                        setLoopMode(NO_LOOP_MODE);
+                    }
+                    break;
+                }
+                case R.id.loop_end:
+                {
+                    int now = player.getCurrentPosition() + mPlayStartOffset;
+                    int frames = mWaveformView.millisecsToPixels(now);
+                    setEndPos(frames);
+                    break;
+                }
             }
         }
     };
 
-    private void startPlay(String file) {
-        player.stop();
-        player.reset();
 
-        try {
-            player.setDataSource(file);
-            player.prepare();
-            player.start();
-        } catch (IllegalArgumentException e) {
-            e.printStackTrace();
-        } catch (IllegalStateException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+    private void setLoopMode(int loopMode) {
+        if(loopMode == CONTINUOUS_LOOP_MODE){
+            mLoopModeButton.setText(R.string.continuous_loop_mode);
+        } else if(loopMode == ONCE_LOOP_MODE) {
+            mLoopModeButton.setText(R.string.once_loop_mode);
+        } else if(loopMode == NO_LOOP_MODE) {
+            mLoopModeButton.setText(R.string.no_loop_mode);
         }
+        mLoopMode = loopMode;
+        mWaveformView.setLoopMode(mLoopMode);
+        updateDisplay();
+    }
 
-        playButton.setImageResource(android.R.drawable.ic_media_pause);
-        isStarted = true;
+    private void setStartPos(int frames){
+        mStartPos = frames;
+        mWaveformView.setSelectionStart(mStartPos);
+        if(mStartPos >= mEndPos){
+            setEndPos(mWaveformView.getNumOfFrames());
+        }
+        if (mStartPos > mMaxPos)
+            mStartPos = mMaxPos;
+        int millis = mWaveformView.pixelsToMillisecs(mStartPos);
+        int minutes = millis / (60*1000);
+        String minutesStr = Integer.toString(minutes);
+        if(minutesStr.length()==1)
+            minutesStr = "0" + minutesStr;
+        int secs = (millis - 60*1000*minutes)/1000;
+        String secsStr = Integer.toString(secs);
+        if(secsStr.length()==1)
+            secsStr = "0" + secsStr;
+        int cents = (millis - 60*1000*minutes - 1000*secs)/10;
+        String centsStr = Integer.toString(cents);
+        if(centsStr.length()==1)
+            centsStr = "0" + centsStr;
+        startLoopTimeButton.setText(minutesStr+":"+secsStr+":"+centsStr);
+        updateDisplay();
+    }
+
+    private void setEndPos(int frames){
+        mEndPos = frames;
+        mWaveformView.setSelectionEnd(mEndPos);
+        if(mEndPos<=mStartPos){
+            setStartPos(0);
+        }
+        if (mEndPos >= mMaxPos)
+            mEndPos = mMaxPos-1;
+        int millis = mWaveformView.pixelsToMillisecs(mEndPos);
+        int minutes = millis / (60*1000);
+        String minutesStr = Integer.toString(minutes);
+        if(minutesStr.length()==1)
+            minutesStr = "0" + minutesStr;
+        int secs = (millis - 60*1000*minutes)/1000;
+        String secsStr = Integer.toString(secs);
+        if(secsStr.length()==1)
+            secsStr = "0" + secsStr;
+        int cents = (millis - 60*1000*minutes - 1000*secs)/10;
+        String centsStr = Integer.toString(cents);
+        if(centsStr.length()==1)
+            centsStr = "0" + centsStr;
+        endLoopTimeButton.setText(minutesStr+":"+secsStr+":"+centsStr);
+        updateDisplay();
     }
 
     private void stopPlay() {
         player.stop();
         player.reset();
         playButton.setImageResource(android.R.drawable.ic_media_play);
-        isStarted = false;
+        mIsPlaying = false;
     }
 
 
     // Waveform listener implementation
 
     private void loadFromFile() {
+        mHandler = new Handler();
         mFile = new File(mFilename);
         mExtension = getExtensionFromFilename(mFilename);
 
@@ -351,12 +473,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         mAlbum = metadataReader.mAlbum;
         mYear = metadataReader.mYear;
         mGenre = metadataReader.mGenre;
-
-        String titleLabel = mTitle;
-        if (mArtist != null && mArtist.length() > 0) {
-            titleLabel += " - " + mArtist;
-        }
-        setTitle(titleLabel);
 
         mLoadingStartTime = System.currentTimeMillis();
         mLoadingLastUpdateTime = System.currentTimeMillis();
@@ -551,14 +667,15 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         if (player != null && player.isPlaying()) {
             player.pause();
         }
-        mWaveformView.setPlayback(-1);
+        //mWaveformView.setPlayback(-1);
         mIsPlaying = false;
+        playButton.setImageResource(android.R.drawable.ic_media_play);
         // enableDisableButtons();
     }
 
     private void resetPositions() {
         mStartPos = mWaveformView.secondsToPixels(0.0);
-        mEndPos = mWaveformView.secondsToPixels(15.0);
+        mEndPos = mMaxPos;
     }
 
     public void waveformTouchStart(float x) {
@@ -588,26 +705,23 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         long elapsedMsec = System.currentTimeMillis() -
                 mWaveformTouchStartMsec;
         if (elapsedMsec < 300) {
-            if (mIsPlaying) {
+            int touchFrame = (int)(mTouchStart + getmOffset());
+       //     if (!mIsPlaying) {
                 int seekMsec = mWaveformView.pixelsToMillisecs(
-                        (int)(mTouchStart + getmOffset()));
-                if (seekMsec >= mPlayStartMsec &&
-                        seekMsec < mPlayEndMsec) {
-                    player.seekTo(seekMsec - mPlayStartOffset);
-                } else {
-                    handlePause();
-                }
-            } else {
-                onPlay((int)(mTouchStart + getmOffset()));
+                        touchFrame);
+                player.seekTo(seekMsec - mPlayStartOffset);
+       //     } else {
+       //         onPlay(touchFrame);
+       //     }
+            if(touchFrame<mStartPos ||touchFrame>mEndPos){
+                setLoopMode(NO_LOOP_MODE);
+            } else if(!mIsPlaying){
+                updateDisplay();
             }
         }
     }
 
     private synchronized void onPlay(int startPosition) {
-        if (mIsPlaying) {
-            handlePause();
-            return;
-        }
 
         if (player == null) {
             // Not initialized yet
@@ -657,12 +771,20 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                     handlePause();
                 }
             });
-            mIsPlaying = true;
 
-            if (mPlayStartOffset == 0) {
-                player.seekTo(mPlayStartMsec);
-            }
+
+            /*
+            if (mIsPlaying) {
+                handlePause();
+                playButton.setImageResource(android.R.drawable.ic_media_play);
+            } else {
+                mIsPlaying = true;
+                playButton.setImageResource(android.R.drawable.ic_media_pause);
+                player.start();
+            }*/
+
             player.start();
+
             updateDisplay();
             //enableDisableButtons();
         } catch (Exception e) {
@@ -706,7 +828,6 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
      */
     public void waveformDraw() {
         mWidth = mWaveformView.getMeasuredWidth();
-        System.out.println(mWidth);
         if (mOffsetGoal != getmOffset())
             updateDisplay();
         else if (mIsPlaying) {
@@ -717,19 +838,32 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
     }
 
     private synchronized void updateDisplay() {
+
+        int now = player.getCurrentPosition() + mPlayStartOffset;
+        int frames = mWaveformView.millisecsToPixels(now);
         if (mIsPlaying) {
-            int now = player.getCurrentPosition() + mPlayStartOffset;
-            int frames = mWaveformView.millisecsToPixels(now);
-            mWaveformView.setPlayback(frames);
-            setOffsetGoalNoUpdate(frames - mWidth / 2);
-            if (now >= mPlayEndMsec) {
-                handlePause();
+            if (mLoopMode == CONTINUOUS_LOOP_MODE) {
+                if (frames >= mEndPos || frames < mStartPos) {
+                    frames = mStartPos;
+                    player.seekTo(mWaveformView.pixelsToMillisecs(frames));
+                }
+            } else if (mLoopMode == ONCE_LOOP_MODE) {
+                if(frames >= mEndPos) {
+                    frames = mStartPos;
+                    player.seekTo(mWaveformView.pixelsToMillisecs(frames));
+                    handlePause();
+                }
+                else if(frames < mStartPos){
+                    frames = mStartPos;
+                    player.seekTo(mWaveformView.pixelsToMillisecs(frames));
+                }
             }
         }
+        mWaveformView.setPlayback(frames);
+        setOffsetGoalNoUpdate(frames - mWidth / 2);
 
         if (!mTouchDragging) {
             int offsetDelta;
-
             if (getmFlingVelocity() != 0) {
                 float saveVel = getmFlingVelocity();
 
@@ -742,9 +876,7 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
                 } else {
                     setmFlingVelocity(0);
                 }
-
                 setmOffset(getmOffset() + offsetDelta);
-
                 if (getmOffset() + mWidth > mMaxPos) {
                     setmOffset(mMaxPos - mWidth);
                     setmFlingVelocity(0);
@@ -778,10 +910,16 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         mWaveformView.invalidate();
 
         // Update TimeScroll view data
-        float relativeOffset = (float) getmOffset() /mWaveformView.getNumOfHeightAtThisZoomLevel();
-        float relativeWidth = (float)mWaveformView.getMeasuredWidth()/mWaveformView.getNumOfHeightAtThisZoomLevel();
-        mTimeScrollView.setData(relativeOffset,relativeWidth);
-        mTimeScrollView.invalidate();
+        if(mWaveformView.getNumOfHeightAtThisZoomLevel()!=0){
+            float relativeOffset = (float) getmOffset() /mWaveformView.getNumOfHeightAtThisZoomLevel();
+            float relativeWidth = (float)mWaveformView.getMeasuredWidth()/mWaveformView.getNumOfHeightAtThisZoomLevel();
+            float relativeStart = (float) mStartPos/mWaveformView.getNumOfHeightAtThisZoomLevel();
+            float relativeEnd = (float) mEndPos/mWaveformView.getNumOfHeightAtThisZoomLevel();
+            float relativePlayback = (float) frames/mWaveformView.getNumOfHeightAtThisZoomLevel();
+            mTimeScrollView.setData(relativeOffset,relativeWidth, relativeStart, relativeEnd, mLoopMode,relativePlayback);
+            mTimeScrollView.invalidate();
+        }
+
     }
 
     private void setOffsetGoalNoUpdate(int offset) {
@@ -822,34 +960,72 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         Log.i("value is",""+newVal);
     }
 
-    public void show()
+
+    public void show(final boolean startSelector)
     {
         final Dialog d = new Dialog(PlayerActivity.this);
-        d.setTitle("NumberPicker");
+
+        //
         d.setContentView(R.layout.time_picker_dialog);
         Button b1 = (Button) d.findViewById(R.id.button1);
         Button b2 = (Button) d.findViewById(R.id.button2);
         final NumberPicker np1 = (NumberPicker) d.findViewById(R.id.numberPicker1);
         final NumberPicker np2 = (NumberPicker) d.findViewById(R.id.numberPicker2);
         final NumberPicker np3 = (NumberPicker) d.findViewById(R.id.numberPicker3);
-        np1.setMaxValue(500); // max value 100
+        np1.setMaxValue(120); // max value 100
         np1.setMinValue(0);   // min value 0
         np1.setWrapSelectorWheel(true);
         np1.setOnValueChangedListener(this);
-        np2.setMaxValue(60); // max value 100
+        np1.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+        np2.setMaxValue(59); // max value 100
         np2.setMinValue(0);   // min value 0
         np2.setWrapSelectorWheel(true);
         np2.setOnValueChangedListener(this);
-        np3.setMaxValue(60); // max value 100
+        np2.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+        np3.setMaxValue(99); // max value 100
         np3.setMinValue(0);   // min value 0
         np3.setWrapSelectorWheel(true);
         np3.setOnValueChangedListener(this);
+        np3.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
+
+        if(startSelector){
+            int millis = mWaveformView.pixelsToMillisecs(mStartPos);
+            int minutes = millis / (60*1000);
+            np1.setValue(minutes);
+            int secs = (millis - 60*1000*minutes)/1000;
+            np2.setValue(secs);
+            int cents = (millis - 60*1000*minutes - 1000*secs)/10;
+            np3.setValue(cents);
+            d.setTitle("Start loop time");
+        } else {
+            int millis = mWaveformView.pixelsToMillisecs(mEndPos);
+            int minutes = millis / (60*1000);
+            np1.setValue(minutes);
+            int secs = (millis - 60*1000*minutes)/1000;
+            np2.setValue(secs);
+            int cents = (millis - 60*1000*minutes - 1000*secs)/10;
+            np3.setValue(cents);
+            d.setTitle("End loop time");
+        }
+
+        int maxMillis = mWaveformView.pixelsToMillisecs(mMaxPos);
+        int maxMinutes = maxMillis / (60*1000);
+        np1.setMaxValue(maxMinutes);
 
         b1.setOnClickListener(new View.OnClickListener()
         {
             @Override
             public void onClick(View v) {
              //   tv.setText(String.valueOf(np.getValue())); //set the value to textview
+                // set selector, seek and update display
+                int millis = np1.getValue()*60*1000 + np2.getValue()*1000 + np3.getValue()*10;
+                int frames = mWaveformView.millisecsToPixels(millis);
+                if(startSelector){
+                    setStartPos(frames);
+                } else {
+                    setEndPos(frames);
+                }
+                player.seekTo(millis);
                 d.dismiss();
             }
         });
@@ -862,8 +1038,4 @@ implements WaveformView.WaveformListener, NumberPicker.OnValueChangeListener{
         });
         d.show();
     }
-
-
-
-
 }
